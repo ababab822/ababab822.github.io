@@ -271,11 +271,15 @@
         let score = 0;
         let highScore = localStorage.getItem('snakeHighScore') || 0;
         let level = 1;
-        let gameSpeed = 150;
+        let gameSpeed = 300; // 降低初始移动速度
+        let baseGameSpeed = gameSpeed; // 基础速度，用于恢复
+        let isAccelerating = false; // 是否处于加速状态
         let gameInterval;
         let isGameOver = false;
         let isPaused = false;
         let gridSize = 20;
+        let canvasWidthInGrid = canvas.width / gridSize;
+        let canvasHeightInGrid = canvas.height / gridSize;
 
         // 更新最高分显示
         highScoreElement.textContent = highScore;
@@ -292,7 +296,9 @@
             nextDirection = 'right';
             score = 0;
             level = 1;
-            gameSpeed = 150;
+            gameSpeed = 300;
+            baseGameSpeed = 300;
+            isAccelerating = false;
             isGameOver = false;
             isPaused = false;
             
@@ -326,8 +332,10 @@
         function gameLoop() {
             if (isPaused || isGameOver) return;
             
-            // 更新方向
-            direction = nextDirection;
+            // 立即更新方向，确保更快的响应
+            if (nextDirection) {
+                direction = nextDirection;
+            }
             
             // 更新蛇的位置
             moveSnake();
@@ -354,8 +362,9 @@
                 level = Math.floor(score / 50) + 1;
                 levelElement.textContent = level;
                 
-                // 提升游戏速度
-                gameSpeed = Math.max(50, 150 - (level - 1) * 10);
+                // 提升游戏速度（更慢的速度提升）
+                gameSpeed = Math.max(150, 300 - (level - 1) * 5); // 最大速度不低于150ms
+                baseGameSpeed = gameSpeed; // 更新基础速度
                 clearInterval(gameInterval);
                 gameInterval = setInterval(gameLoop, gameSpeed);
                 
@@ -370,22 +379,30 @@
             drawGame();
         }
 
-        // 移动蛇
+        // 移动蛇（支持穿墙）
         function moveSnake() {
             const head = { ...snake[0] };
             
             switch (direction) {
                 case 'up':
                     head.y -= 1;
+                    // 穿墙：顶部出去底部进来
+                    if (head.y < 0) head.y = canvasHeightInGrid - 1;
                     break;
                 case 'down':
                     head.y += 1;
+                    // 穿墙：底部出去顶部进来
+                    if (head.y >= canvasHeightInGrid) head.y = 0;
                     break;
                 case 'left':
                     head.x -= 1;
+                    // 穿墙：左侧出去右侧进来
+                    if (head.x < 0) head.x = canvasWidthInGrid - 1;
                     break;
                 case 'right':
                     head.x += 1;
+                    // 穿墙：右侧出去左侧进来
+                    if (head.x >= canvasWidthInGrid) head.x = 0;
                     break;
             }
             
@@ -393,15 +410,9 @@
             snake.unshift(head);
         }
 
-        // 检查碰撞
+        // 检查碰撞（只检查自身碰撞，不检查边界碰撞）
         function checkCollision() {
             const head = snake[0];
-            
-            // 检查边界碰撞
-            if (head.x < 0 || head.x >= canvas.width / gridSize ||
-                head.y < 0 || head.y >= canvas.height / gridSize) {
-                return true;
-            }
             
             // 检查自身碰撞
             for (let i = 1; i < snake.length; i++) {
@@ -601,39 +612,67 @@
                 clearInterval(gameInterval);
             } else {
                 gameContainer.classList.remove('is-paused');
-                gameInterval = setInterval(gameLoop, gameSpeed);
+                // 根据是否处于加速状态设置游戏速度
+                const currentSpeed = isAccelerating ? Math.max(50, baseGameSpeed / 2) : baseGameSpeed;
+                gameInterval = setInterval(gameLoop, currentSpeed);
             }
             
             drawGame();
         }
 
-        // 键盘事件监听
+        // 键盘事件监听 - 添加长按加速功能
         document.addEventListener('keydown', (e) => {
             // 防止默认行为（如页面滚动）
             if ([37, 38, 39, 40, 32].includes(e.keyCode)) {
                 e.preventDefault();
             }
             
-            // 方向控制
+            // 方向控制和加速
             switch (e.keyCode) {
                 case 38: // 上
-                    if (direction !== 'down') {
-                        nextDirection = 'up';
-                    }
-                    break;
                 case 40: // 下
-                    if (direction !== 'up') {
-                        nextDirection = 'down';
-                    }
-                    break;
                 case 37: // 左
-                    if (direction !== 'right') {
-                        nextDirection = 'left';
-                    }
-                    break;
                 case 39: // 右
-                    if (direction !== 'left') {
+                    // 设置方向 - 允许连续快速切换方向，提高灵活性
+                    if (e.keyCode === 38 && direction !== 'down') {
+                        nextDirection = 'up';
+                        // 立即应用新方向，实现即时响应
+                        if (!isPaused && !isGameOver) {
+                            direction = 'up';
+                        }
+                    }
+                    if (e.keyCode === 40 && direction !== 'up') {
+                        nextDirection = 'down';
+                        // 立即应用新方向，实现即时响应
+                        if (!isPaused && !isGameOver) {
+                            direction = 'down';
+                        }
+                    }
+                    if (e.keyCode === 37 && direction !== 'right') {
+                        nextDirection = 'left';
+                        // 立即应用新方向，实现即时响应
+                        if (!isPaused && !isGameOver) {
+                            direction = 'left';
+                        }
+                    }
+                    if (e.keyCode === 39 && direction !== 'left') {
                         nextDirection = 'right';
+                        // 立即应用新方向，实现即时响应
+                        if (!isPaused && !isGameOver) {
+                            direction = 'right';
+                        }
+                    }
+                    
+                    // 长按加速 - 如果不是游戏结束或暂停状态
+                    if (!isGameOver && !isPaused && !isAccelerating) {
+                        isAccelerating = true;
+                        // 保存当前基础速度
+                        baseGameSpeed = gameSpeed;
+                        // 加速：将速度减半（最小不低于50ms）
+                        gameSpeed = Math.max(50, gameSpeed / 2);
+                        // 重新设置游戏循环
+                        if (gameInterval) clearInterval(gameInterval);
+                        gameInterval = setInterval(gameLoop, gameSpeed);
                     }
                     break;
                 case 32: // 空格
@@ -648,6 +687,19 @@
                     break;
             }
         });
+        
+        // 键盘松开事件监听 - 恢复正常速度
+        document.addEventListener('keyup', (e) => {
+            // 当松开方向键时，恢复正常速度
+            if ([37, 38, 39, 40].includes(e.keyCode) && isAccelerating && !isGameOver && !isPaused) {
+                isAccelerating = false;
+                // 恢复到基础速度
+                gameSpeed = baseGameSpeed;
+                // 重新设置游戏循环
+                if (gameInterval) clearInterval(gameInterval);
+                gameInterval = setInterval(gameLoop, gameSpeed);
+            }
+        });
 
         // 按钮事件监听
         startBtn.addEventListener('click', initGame);
@@ -657,26 +709,40 @@
         
         // 移动按钮事件监听 - 增强移动设备支持
         function setupDirectionButton(btn, dir, oppositeDir) {
-            // 标准点击事件
+            // 标准点击事件 - 增强灵活性
             btn.addEventListener('click', () => {
                 if (direction !== oppositeDir && !isPaused && !isGameOver) {
                     nextDirection = dir;
+                    // 立即应用新方向，实现即时响应
+                    direction = dir;
                 }
             });
             
-            // 触摸开始事件（按住按钮时）
+            // 触摸开始事件（按住按钮时）- 提高触摸灵敏度
             btn.addEventListener('touchstart', (e) => {
                 e.preventDefault(); // 防止触摸时的默认行为
                 if (direction !== oppositeDir && !isPaused && !isGameOver) {
                     nextDirection = dir;
+                    // 立即应用新方向，实现即时响应
+                    direction = dir;
                     btn.classList.add('active');
                     
-                    // 设置一个短暂的计时器，在按住时持续更新方向
+                    // 长按加速
+                    if (!isAccelerating) {
+                        isAccelerating = true;
+                        baseGameSpeed = gameSpeed;
+                        gameSpeed = Math.max(50, gameSpeed / 2);
+                        if (gameInterval) clearInterval(gameInterval);
+                        gameInterval = setInterval(gameLoop, gameSpeed);
+                    }
+                    
+                    // 设置一个更短的计时器，在按住时持续更新方向，提高灵敏度
                     btn.touchInterval = setInterval(() => {
                         if (direction !== oppositeDir && !isPaused && !isGameOver) {
                             nextDirection = dir;
+                            direction = dir;
                         }
-                    }, 50); // 50ms更新一次
+                    }, 20); // 20ms更新一次，提高响应速度
                 }
             }, { passive: false });
             
@@ -688,6 +754,13 @@
                     clearInterval(btn.touchInterval);
                     btn.touchInterval = null;
                 }
+                // 恢复正常速度
+                if (isAccelerating && !isGameOver && !isPaused) {
+                    isAccelerating = false;
+                    gameSpeed = baseGameSpeed;
+                    if (gameInterval) clearInterval(gameInterval);
+                    gameInterval = setInterval(gameLoop, gameSpeed);
+                }
             }, { passive: false });
             
             // 触摸离开按钮区域事件
@@ -697,6 +770,13 @@
                 if (btn.touchInterval) {
                     clearInterval(btn.touchInterval);
                     btn.touchInterval = null;
+                }
+                // 恢复正常速度
+                if (isAccelerating && !isGameOver && !isPaused) {
+                    isAccelerating = false;
+                    gameSpeed = baseGameSpeed;
+                    if (gameInterval) clearInterval(gameInterval);
+                    gameInterval = setInterval(gameLoop, gameSpeed);
                 }
             }, { passive: false });
         }
