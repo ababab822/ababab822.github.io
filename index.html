@@ -74,6 +74,10 @@
             cursor: pointer;
             transition: all 0.3s;
             font-weight: bold;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            position: relative;
+            overflow: hidden;
         }
         
         button:hover {
@@ -81,24 +85,92 @@
             transform: scale(1.05);
         }
         
+        button:active {
+            transform: scale(0.98);
+        }
+        
         .mobile-controls {
             display: none;
             grid-template-columns: repeat(3, 1fr);
-            gap: 10px;
-            margin-top: 20px;
+            gap: 15px;
+            margin-top: 30px;
+            max-width: 300px;
+            width: 100%;
+            margin-left: auto;
+            margin-right: auto;
         }
         
         .mobile-btn {
             aspect-ratio: 1;
-            font-size: 24px;
+            font-size: 36px;
             display: flex;
             align-items: center;
             justify-content: center;
+            border-radius: 15px;
+            background-color: rgba(0, 255, 0, 0.3);
+            border: 3px solid #0f0;
+            color: #fff;
+            transition: all 0.1s ease;
+            box-shadow: 0 5px 15px rgba(0, 255, 0, 0.5);
+            min-height: 80px;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .mobile-btn:active,
+        .mobile-btn.active {
+            transform: scale(0.95);
+            background-color: rgba(0, 255, 0, 0.6);
+            box-shadow: 0 2px 8px rgba(0, 255, 0, 0.7);
+            border-color: #fff;
+            color: #fff;
+        }
+        
+        /* 游戏暂停或结束时的按钮状态 */
+        .is-paused .mobile-btn,
+        .is-game-over .mobile-btn {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        
+        .mobile-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0) 70%);
+            pointer-events: none;
+            border-radius: 15px;
+        }
+        
+        /* 方向按钮特定样式 */
+        #upBtn {
+            grid-column: 2;
+        }
+        
+        #downBtn {
+            grid-column: 2;
+        }
+        
+        #leftBtn {
+            grid-column: 1;
+        }
+        
+        #rightBtn {
+            grid-column: 3;
         }
         
         @media (max-width: 768px) {
             .mobile-controls {
                 display: grid;
+            }
+            
+            /* 在小屏幕上进一步增大按钮 */
+            .mobile-btn {
+                min-height: 70px;
+                font-size: 32px;
             }
             
             canvas {
@@ -185,6 +257,11 @@
         const finalScoreElement = document.getElementById('finalScore');
         const finalHighScoreElement = document.getElementById('finalHighScore');
         const playAgainBtn = document.getElementById('playAgainBtn');
+        const gameContainer = document.querySelector('.game-container');
+        
+        // 确保方向按钮在所有屏幕尺寸下都可见
+        const mobileControls = document.querySelector('.mobile-controls');
+        mobileControls.style.display = 'grid';
 
         // 游戏变量
         let snake = [];
@@ -218,6 +295,19 @@
             gameSpeed = 150;
             isGameOver = false;
             isPaused = false;
+            
+            // 更新游戏容器类
+            gameContainer.classList.remove('is-game-over');
+            gameContainer.classList.remove('is-paused');
+            
+            // 清除所有按钮的活动状态
+            document.querySelectorAll('.mobile-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.touchInterval) {
+                    clearInterval(btn.touchInterval);
+                    btn.touchInterval = null;
+                }
+            });
             
             // 更新UI
             scoreElement.textContent = score;
@@ -477,12 +567,27 @@
             isGameOver = true;
             clearInterval(gameInterval);
             
+            // 更新游戏容器类
+            gameContainer.classList.add('is-game-over');
+            gameContainer.classList.remove('is-paused');
+            
+            // 清除所有按钮的活动状态
+            document.querySelectorAll('.mobile-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.touchInterval) {
+                    clearInterval(btn.touchInterval);
+                    btn.touchInterval = null;
+                }
+            });
+            
             // 更新游戏结束屏幕
             finalScoreElement.textContent = score;
             finalHighScoreElement.textContent = highScore;
             gameOverScreen.style.display = 'flex';
         }
 
+
+        
         // 暂停/继续游戏
         function togglePause() {
             if (isGameOver) return;
@@ -490,11 +595,12 @@
             isPaused = !isPaused;
             pauseBtn.textContent = isPaused ? '继续游戏' : '暂停游戏';
             
-            // 如果暂停，清空计时器
+            // 更新游戏容器类
             if (isPaused) {
+                gameContainer.classList.add('is-paused');
                 clearInterval(gameInterval);
             } else {
-                // 如果继续，重新开始计时器
+                gameContainer.classList.remove('is-paused');
                 gameInterval = setInterval(gameLoop, gameSpeed);
             }
             
@@ -549,30 +655,57 @@
         restartBtn.addEventListener('click', initGame);
         playAgainBtn.addEventListener('click', initGame);
         
-        // 移动按钮事件监听
-        upBtn.addEventListener('click', () => {
-            if (direction !== 'down') {
-                nextDirection = 'up';
-            }
-        });
+        // 移动按钮事件监听 - 增强移动设备支持
+        function setupDirectionButton(btn, dir, oppositeDir) {
+            // 标准点击事件
+            btn.addEventListener('click', () => {
+                if (direction !== oppositeDir && !isPaused && !isGameOver) {
+                    nextDirection = dir;
+                }
+            });
+            
+            // 触摸开始事件（按住按钮时）
+            btn.addEventListener('touchstart', (e) => {
+                e.preventDefault(); // 防止触摸时的默认行为
+                if (direction !== oppositeDir && !isPaused && !isGameOver) {
+                    nextDirection = dir;
+                    btn.classList.add('active');
+                    
+                    // 设置一个短暂的计时器，在按住时持续更新方向
+                    btn.touchInterval = setInterval(() => {
+                        if (direction !== oppositeDir && !isPaused && !isGameOver) {
+                            nextDirection = dir;
+                        }
+                    }, 50); // 50ms更新一次
+                }
+            }, { passive: false });
+            
+            // 触摸结束事件
+            btn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                btn.classList.remove('active');
+                if (btn.touchInterval) {
+                    clearInterval(btn.touchInterval);
+                    btn.touchInterval = null;
+                }
+            }, { passive: false });
+            
+            // 触摸离开按钮区域事件
+            btn.addEventListener('touchleave', (e) => {
+                e.preventDefault();
+                btn.classList.remove('active');
+                if (btn.touchInterval) {
+                    clearInterval(btn.touchInterval);
+                    btn.touchInterval = null;
+                }
+            }, { passive: false });
+        }
         
-        downBtn.addEventListener('click', () => {
-            if (direction !== 'up') {
-                nextDirection = 'down';
-            }
-        });
-        
-        leftBtn.addEventListener('click', () => {
-            if (direction !== 'right') {
-                nextDirection = 'left';
-            }
-        });
-        
-        rightBtn.addEventListener('click', () => {
-            if (direction !== 'left') {
-                nextDirection = 'right';
-            }
-        });
+        // 设置所有方向按钮
+        setupDirectionButton(upBtn, 'up', 'down');
+        setupDirectionButton(downBtn, 'down', 'up');
+        setupDirectionButton(leftBtn, 'left', 'right');
+        setupDirectionButton(rightBtn, 'right', 'left');
 
         // 触摸滑动控制（移动设备）
         let touchStartX = 0;
